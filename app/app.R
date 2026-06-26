@@ -4,7 +4,7 @@ library(DT)
 library(magick) 
 
 ui <- fluidPage(
-  titlePanel("PUNDO (Testing Version)"),
+  titlePanel("Plant Spatial Points Tool (Shiny 版)"),
   
   fluidRow(
     
@@ -78,10 +78,28 @@ server <- function(input, output, session) {
     waiting_for_click = FALSE
   )
   
+  # 防禦性 CSV 讀取：加上 tryCatch 避免伺服器因編碼崩潰
   observeEvent(input$file1, {
     req(input$file1)
-    df <- read.csv(input$file1$datapath, stringsAsFactors = FALSE, fileEncoding = input$encoding)
-    rv$data <- df
+    
+    tryCatch({
+      df <- read.csv(input$file1$datapath, stringsAsFactors = FALSE, fileEncoding = input$encoding)
+      
+      # 自動補齊欄位，避免缺少 x3, y3 導致 ggplot 當機
+      expected_cols <- c("x1", "y1", "x2", "y2", "tag", "sp", "dbh", "x3", "y3")
+      for (col in expected_cols) {
+        if (!col %in% colnames(df)) {
+          df[[col]] <- NA
+        }
+      }
+      
+      rv$data <- df
+      showNotification("資料匯入成功！", type = "message")
+      
+    }, error = function(e) {
+      showNotification(paste("檔案讀取失敗 (可能是編碼與伺服器不相容)：", e$message), 
+                       type = "error", duration = 10)
+    })
   })
   
   observeEvent(input$in_tag, {
@@ -146,30 +164,34 @@ server <- function(input, output, session) {
   })
   
   output$plot1 <- renderPlot({
+    # 改用 theme_minimal 並加上實體白底黑框，確保畫布永遠存在
     p <- ggplot() +
       scale_x_continuous(limits = c(0, input$max_x), expand = c(0, 0)) + 
       scale_y_continuous(limits = c(0, input$max_y), expand = c(0, 0)) +
-      theme_void() + 
+      theme_minimal() + 
       coord_fixed(ratio = 1, expand = FALSE) +
       labs(x = "x3 座標 (cm)", y = "y3 座標 (cm)") +
       theme(
+        panel.grid = element_blank(),
+        panel.background = element_rect(fill = "white", color = "black", linewidth = 1),
         axis.text = element_text(size = 10),
         axis.title = element_text(size = 12, face = "bold"),
         plot.margin = margin(10, 10, 10, 10)
       )
     
     if (!is.null(input$bg_img)) {
-      img_magick <- magick::image_read(input$bg_img$datapath)
-      
-      if (input$img_angle != 0) {
-        img_magick <- magick::image_rotate(img_magick, input$img_angle)
-      }
-      
-      img_raster <- as.raster(img_magick)
-      
-      p <- p + annotation_raster(img_raster, 
-                                 xmin = input$img_xmin, xmax = input$img_xmax, 
-                                 ymin = input$img_ymin, ymax = input$img_ymax)
+      tryCatch({
+        img_magick <- magick::image_read(input$bg_img$datapath)
+        if (input$img_angle != 0) {
+          img_magick <- magick::image_rotate(img_magick, input$img_angle)
+        }
+        img_raster <- as.raster(img_magick)
+        p <- p + annotation_raster(img_raster, 
+                                   xmin = input$img_xmin, xmax = input$img_xmax, 
+                                   ymin = input$img_ymin, ymax = input$img_ymax)
+      }, error = function(e) {
+        # 影像載入失敗時靜默忽略，保護畫布不崩潰
+      })
     }
     
     major_x <- c(0, input$max_x / 2, input$max_x)
@@ -185,12 +207,10 @@ server <- function(input, output, session) {
     
     if (nrow(rv$data) > 0) {
       p <- p + 
-        # 將 DBH 映射至 size，並加入透明度
         geom_point(data = rv$data, aes(x = as.numeric(x3), y = as.numeric(y3), size = as.numeric(dbh)), 
-                   color = "#00878A", alpha = 0.7, na.rm = TRUE) +
+                   color = "#008B8B", alpha = 0.7, na.rm = TRUE) +
         geom_text(data = rv$data, aes(x = as.numeric(x3), y = as.numeric(y3), label = tag), 
-                  vjust = -1.5, color = "#00878A", size = 4, na.rm = TRUE) +
-        # 關閉圖例並限制大小的縮放範圍
+                  vjust = -1.5, color = "#008B8B", size = 4, na.rm = TRUE) +
         scale_size_continuous(range = c(2, 12), guide = "none")
     }
     
@@ -198,7 +218,7 @@ server <- function(input, output, session) {
   })
   
   output$table1 <- renderDT({
-    datatable(rv$data, selection = 'single', options = list(pageLength = 10))
+    datatable(rv$data, selection = 'single', options = list(pageLength = 15))
   })
   
   output$downloadData <- downloadHandler(
