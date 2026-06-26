@@ -4,7 +4,7 @@ library(DT)
 library(magick) 
 
 ui <- fluidPage(
-  titlePanel("Plant Spatial Points Tool (Shiny 版)"),
+  titlePanel("PUNDO (Test版)"),
   
   fluidRow(
     
