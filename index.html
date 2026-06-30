@@ -34,6 +34,19 @@
         .notice { font-size: 12px; color: #d9534f; margin-bottom: 10px; }
         .linked-data-box { background-color: #ececec; padding: 12px; border-radius: 6px; border: 1px solid #dcdcdc; margin-bottom: 12px; }
         .linked-data-box label { color: #555; }
+	/* 手機與平板適用的動態佈局 */
+        @media (max-width: 768px) {
+            .container {
+                flex-direction: column; /* 強制改為垂直堆疊 */
+            }
+            .col-left, .col-mid, .col-right {
+                flex: none;
+                width: 100%; /* 每個區塊寬度拉滿 */
+            }
+            body {
+                padding: 10px; /* 手機版減少左右邊距，爭取空間 */
+            }
+        }
     </style>
 </head>
 <body>
