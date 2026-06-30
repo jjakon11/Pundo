@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Pundo</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <style>
         body { font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; background-color: #f5f5f5; color: #333; margin: 0; padding: 20px; }
         .container { display: flex; gap: 20px; max-width: 1400px; margin: 0 auto; }
@@ -19,6 +20,8 @@
         button { padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%; transition: 0.2s; }
         .btn-primary { background-color: #337ab7; color: white; }
         .btn-primary:hover { background-color: #286090; }
+        .btn-danger { background-color: #d9534f; color: white; }
+        .btn-danger:hover { background-color: #c9302c; }
         .btn-success { background-color: #5cb85c; color: white; font-size: 16px; padding: 15px; }
         .btn-success:hover { background-color: #449d44; }
         #canvas-container { background-color: transparent; margin-top: 15px; display: flex; justify-content: center; overflow: hidden; }
@@ -26,7 +29,8 @@
         table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 10px; }
         th, td { border: 1px solid #ddd; padding: 6px; text-align: left; }
         th { background-color: #f2f2f2; }
-        tr:hover { background-color: #f5f5f5; }
+        tr.selected { background-color: #d9edf7; }
+        tr:hover { background-color: #f5f5f5; cursor: pointer; }
         .notice { font-size: 12px; color: #d9534f; margin-bottom: 10px; }
         .linked-data-box { background-color: #ececec; padding: 12px; border-radius: 6px; border: 1px solid #dcdcdc; margin-bottom: 12px; }
         .linked-data-box label { color: #555; }
@@ -104,6 +108,7 @@
 
             <div class="row">
                 <div class="col"><button class="btn-primary" id="btnPrepareClick">準備點擊圖面</button></div>
+                <div class="col"><button class="btn-danger" id="btnDelete">刪除選取資料</button></div>
             </div>
         </div>
         <div id="canvas-container">
@@ -112,7 +117,7 @@
     </div>
 
     <div class="col-right">
-        <div class="panel" style="height: 600px; overflow-y: auto;">
+        <div class="panel" style="height: 500px; overflow-y: auto;">
             <h4>4. 資料呈現</h4>
             <table id="dataTable">
                 <thead>
@@ -124,6 +129,22 @@
             </table>
         </div>
         <button class="btn-success" id="btnDownload" style="margin-top: 20px;">下載完成的 CSV 檔案</button>
+        
+        <div class="panel" style="margin-top: 20px;">
+            <h4>5. A4 野外繪圖 PDF & 畫布顯示切換</h4>
+            <div class="form-group">
+                <label>樣區 (Plot) 顯示與出圖選擇</label>
+                <select id="plotSelector" style="font-weight: bold; color: #008B8B; border: 2px solid #008B8B;">
+                    <option value="ALL">批次全出 (顯示全部)</option>
+                </select>
+            </div>
+            <div class="notice">
+                選擇特定樣區時，畫布與表格將自動切換至該樣區。選擇「批次全出」將會把所有樣區分別輸出成多頁 PDF。
+            </div>
+            <button class="btn-success" id="btnDownloadPDF" style="padding: 10px; font-size: 14px;">
+                下載 A4 野外繪圖 PDF
+            </button>
+        </div>
     </div>
 </div>
 
@@ -132,11 +153,13 @@
     let data = []; 
     let bgImg = null;
     let waitingForClick = false;
+    let selectedRowRef = null;
 
     const canvas = document.getElementById('myCanvas');
     const ctx = canvas.getContext('2d');
     const statusMsg = document.getElementById('statusMsg');
     const tbody = document.querySelector('#dataTable tbody');
+    const plotSelector = document.getElementById('plotSelector');
 
     const getSettings = () => ({
         maxX: parseFloat(document.getElementById('maxX').value) || 500,
@@ -148,9 +171,90 @@
         imgAngle: parseFloat(document.getElementById('imgAngle').value) || 0
     });
 
+    // --- 共用：整理文字 ---
+    function cleanText(v) {
+        return String(v || '').trim();
+    }
+
+    // --- 將表單欄位更新成某一筆資料 ---
+    function fillFormFromRow(row) {
+        if (!row) return;
+        document.getElementById('inTag').value = row.tag || '';
+        document.getElementById('inSp').value = row.sp || '';
+        document.getElementById('inDbh').value = row.dbh || '';
+        document.getElementById('inPlot').value = row.plot || '';
+        document.getElementById('inX1').value = row.x1 || '';
+        document.getElementById('inY1').value = row.y1 || '';
+        document.getElementById('inX2').value = row.x2 || '';
+        document.getElementById('inY2').value = row.y2 || '';
+    }
+
+    // --- 更新樣區下拉選單 ---
+    function updatePlotSelector() {
+        const currentVal = plotSelector.value;
+        const uniquePlots = [...new Set(data.map(d => cleanText(d.plot)).filter(Boolean))].sort();
+
+        plotSelector.innerHTML = '<option value="ALL">批次全出 (顯示全部)</option>';
+        uniquePlots.forEach(p => {
+            const opt = document.createElement('option');
+            opt.value = p;
+            opt.textContent = p;
+            plotSelector.appendChild(opt);
+        });
+
+        if (currentVal === 'ALL' || uniquePlots.includes(currentVal)) {
+            plotSelector.value = currentVal;
+        } else if (uniquePlots.length > 0) {
+            plotSelector.value = 'ALL';
+        }
+    }
+
+    // --- 依照某一筆資料的 plot，自動切換畫布與表格 ---
+    function syncCanvasToRowPlot(row) {
+        if (!row) return;
+        const targetPlot = cleanText(row.plot);
+
+        // 如果這筆資料有 plot，就切換到該 plot
+        if (targetPlot) {
+            const optionExists = Array.from(plotSelector.options).some(opt => opt.value === targetPlot);
+            
+            // 保險：如果 selector 尚未有這個 plot，就臨時加進去
+            if (!optionExists) {
+                const opt = document.createElement('option');
+                opt.value = targetPlot;
+                opt.textContent = targetPlot;
+                plotSelector.appendChild(opt);
+            }
+
+            plotSelector.value = targetPlot;
+            document.getElementById('inPlot').value = targetPlot;
+        } else {
+            // 如果資料沒有 plot，就回到全部顯示
+            plotSelector.value = 'ALL';
+            document.getElementById('inPlot').value = '';
+        }
+
+        draw();
+        renderTable();
+    }
+
+    // 當樣區選單改變時，同步更新 Plot 輸入框並重繪
+    plotSelector.addEventListener('change', () => {
+        selectedRowRef = null;
+        if (plotSelector.value !== 'ALL') {
+            document.getElementById('inPlot').value = plotSelector.value;
+        } else {
+            document.getElementById('inPlot').value = '';
+        }
+        draw();
+        renderTable();
+    });
+
     // --- 繪圖邏輯 ---
     function draw() {
         const s = getSettings();
+        const selPlot = plotSelector.value;
+        const displayData = selPlot === 'ALL' ? data : data.filter(d => cleanText(d.plot) === selPlot);
         
         const maxCanvasSize = 800;
         const pad = { top: 30, right: 30, bottom: 50, left: 60 };
@@ -197,9 +301,9 @@
 
         ctx.font = '12px Arial';
         ctx.fillStyle = '#333';
-
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
+
         for(let i = 0; i <= 10; i++) {
             let val = (s.maxX / 10) * i;
             let pt = toPix(val, 0);
@@ -220,12 +324,14 @@
             
             ctx.fillText(val.toFixed(0), pt.x, originY + 8);
         }
+
         ctx.font = 'bold 13px Arial';
         ctx.fillText("X 座標 (cm)", originX + (s.maxX * scale) / 2, originY + 28);
 
         ctx.font = '12px Arial';
         ctx.textAlign = 'right';
         ctx.textBaseline = 'middle';
+
         for(let i = 0; i <= 10; i++) {
             let val = (s.maxY / 10) * i;
             let pt = toPix(0, val);
@@ -246,6 +352,7 @@
             
             ctx.fillText(val.toFixed(0), originX - 8, pt.y);
         }
+
         ctx.font = 'bold 13px Arial';
         ctx.save();
         ctx.translate(originX - 35, originY - (s.maxY * scale) / 2);
@@ -259,7 +366,7 @@
         ctx.setLineDash([]);
         ctx.strokeRect(originX, pad.top, s.maxX * scale, s.maxY * scale);
 
-        data.forEach(p => {
+        displayData.forEach(p => {
             if(p.x3 === undefined || p.y3 === undefined || isNaN(p.x3) || isNaN(p.y3)) return;
             let pt = toPix(p.x3, p.y3);
             let radius = Math.max(3, Math.min(15, parseFloat(p.dbh) || 5)); 
@@ -282,8 +389,23 @@
     // --- 資料表渲染 ---
     function renderTable() {
         tbody.innerHTML = '';
-        data.forEach((row) => {
+        const selPlot = plotSelector.value;
+        const displayData = selPlot === 'ALL' ? data : data.filter(d => cleanText(d.plot) === selPlot);
+
+        displayData.forEach(row => {
             let tr = document.createElement('tr');
+            if (row === selectedRowRef) tr.className = 'selected';
+            
+            tr.onclick = () => {
+                selectedRowRef = row;
+                // 點選表格某一列時，也同步帶入表單並切換畫布
+                fillFormFromRow(row);
+                syncCanvasToRowPlot(row);
+
+                statusMsg.innerText = `已選取 Tag: ${row.tag || ''}，畫布已切換至 Plot: ${row.plot || '未命名樣區'}`;
+                statusMsg.style.color = '#337ab7';
+            };
+
             tr.innerHTML = `
                 <td>${row.plot||''}</td>
                 <td>${row.x1||''}</td>
@@ -302,16 +424,22 @@
 
     // --- 事件監聽區 ---
     document.getElementById('inTag').addEventListener('input', function(e) {
-        let val = e.target.value.trim();
-        let match = data.find(d => d.tag === val);
-        if(match) {
-            document.getElementById('inSp').value = match.sp || '';
-            document.getElementById('inDbh').value = match.dbh || '';
-            document.getElementById('inPlot').value = match.plot || '';
-            document.getElementById('inX1').value = match.x1 || '';
-            document.getElementById('inY1').value = match.y1 || '';
-            document.getElementById('inX2').value = match.x2 || '';
-            document.getElementById('inY2').value = match.y2 || '';
+        const val = cleanText(e.target.value);
+        if (!val) return;
+
+        const match = data.find(d => cleanText(d.tag) === val);
+
+        if (match) {
+            selectedRowRef = match;
+            
+            // 1. 連動表單資料
+            fillFormFromRow(match);
+
+            // 2. 依照該 Tag 所在的 plot，自動畫布切換
+            syncCanvasToRowPlot(match);
+
+            statusMsg.innerText = `已載入 Tag: ${match.tag}，畫布已切換至 Plot: ${match.plot || '未命名樣區'}`;
+            statusMsg.style.color = '#337ab7';
         }
     });
 
@@ -325,8 +453,24 @@
         statusMsg.style.color = '#d9534f';
     });
 
+    document.getElementById('btnDelete').addEventListener('click', () => {
+        if(selectedRowRef) {
+            const idx = data.indexOf(selectedRowRef);
+            if (idx > -1) {
+                data.splice(idx, 1);
+            }
+            selectedRowRef = null;
+            updatePlotSelector();
+            draw();
+            renderTable();
+        } else {
+            alert('請先在右側表格點選要刪除的資料');
+        }
+    });
+
     canvas.addEventListener('click', function(e) {
         if (!waitingForClick) return;
+        
         const rect = canvas.getBoundingClientRect();
         const px = (e.clientX - rect.left) * (canvas.width / rect.width);
         const py = (e.clientY - rect.top) * (canvas.height / rect.height);
@@ -351,13 +495,22 @@
         const tag = document.getElementById('inTag').value;
         const sp = document.getElementById('inSp').value;
         const dbh = document.getElementById('inDbh').value;
-        const plot = document.getElementById('inPlot').value;
+        
+        let plot = document.getElementById('inPlot').value.trim();
+        const selPlot = plotSelector.value;
+        if (!plot && selPlot !== 'ALL') {
+            plot = selPlot;
+            document.getElementById('inPlot').value = plot;
+        }
+
         const x1 = document.getElementById('inX1').value;
         const y1 = document.getElementById('inY1').value;
         const x2 = document.getElementById('inX2').value;
         const y2 = document.getElementById('inY2').value;
 
-        let matchIndex = data.findIndex(d => d.tag === tag);
+        let savedRow = null;
+        let matchIndex = data.findIndex(d => cleanText(d.tag) === cleanText(tag));
+
         if (matchIndex >= 0) {
             data[matchIndex].sp = sp;
             data[matchIndex].dbh = dbh;
@@ -368,19 +521,24 @@
             data[matchIndex].y2 = y2;
             data[matchIndex].x3 = dataX.toFixed(2);
             data[matchIndex].y3 = dataY.toFixed(2);
+            savedRow = data[matchIndex];
         } else {
-            data.push({ 
+            savedRow = { 
                 plot: plot, x1: x1, y1: y1, x2: x2, y2: y2, 
                 tag: tag, sp: sp, dbh: dbh, 
                 x3: dataX.toFixed(2), y3: dataY.toFixed(2) 
-            });
+            };
+            data.push(savedRow);
         }
 
         waitingForClick = false;
-        statusMsg.innerText = '✔️ 點位記錄成功';
+        statusMsg.innerText = '✔️ 點位記錄成功，畫布已更新至目前 Plot';
         statusMsg.style.color = '#5cb85c';
-        draw();
-        renderTable();
+
+        selectedRowRef = savedRow;
+
+        updatePlotSelector();
+        syncCanvasToRowPlot(savedRow);
     });
 
     document.getElementById('imgFileInput').addEventListener('change', function(e) {
@@ -418,6 +576,8 @@
                 if(rowData.tag !== undefined) newData.push(rowData);
             }
             data = newData;
+
+            updatePlotSelector();
             draw();
             renderTable();
             alert('CSV 匯入成功！');
@@ -454,6 +614,212 @@
         a.click();
         document.body.removeChild(a);
     });
+
+    // ============================================================
+    // A4 野外繪圖 PDF 輸出
+    // ============================================================
+
+    function numValue(v) {
+        const n = parseFloat(v);
+        return isNaN(n) ? null : n;
+    }
+
+    function circleRadiusFromDbh(dbh) {
+        if (!dbh || dbh <= 0) return 1.2;
+        const r = (dbh / 105) * 6.5;
+        return Math.max(1.2, Math.min(6.5, r));
+    }
+
+    function boxesOverlap(a, b) {
+        return !(a.x2 < b.x1 || a.x1 > b.x2 || a.y2 < b.y1 || a.y1 > b.y2);
+    }
+
+    function placeLabel(doc, text, pointX, pointY, radius, usedBoxes) {
+        doc.setFontSize(7);
+        const labelW = doc.getTextWidth(text);
+        const labelH = 3.0;
+
+        const candidates = [
+            { dx: radius + 1.5, dy: -radius - 0.5 },
+            { dx: radius + 1.5, dy: radius + 2.5 },
+            { dx: -radius - labelW - 1.5, dy: -radius - 0.5 },
+            { dx: -radius - labelW - 1.5, dy: radius + 2.5 },
+            { dx: -labelW / 2, dy: -radius - 3.0 },
+            { dx: -labelW / 2, dy: radius + 4.0 }
+        ];
+
+        for (const c of candidates) {
+            const x = pointX + c.dx;
+            const y = pointY + c.dy;
+            const box = { x1: x, y1: y - labelH, x2: x + labelW, y2: y + 0.8 };
+
+            const outsidePage = box.x1 < 3 || box.x2 > 207 || box.y1 < 3 || box.y2 > 294;
+            if (outsidePage) continue;
+
+            const hasOverlap = usedBoxes.some(b => boxesOverlap(box, b));
+
+            if (!hasOverlap) {
+                usedBoxes.push(box);
+                doc.text(text, x, y);
+                return;
+            }
+        }
+
+        const fallbackX = pointX + radius + 1.5;
+        const fallbackY = pointY - radius - 0.5;
+        usedBoxes.push({ x1: fallbackX, y1: fallbackY - labelH, x2: fallbackX + labelW, y2: fallbackY + 0.8 });
+        doc.text(text, fallbackX, fallbackY);
+    }
+
+    function drawPdfPage(doc, options) {
+        const siteName = options.siteName || '未命名樣區';
+        const plotPoints = options.plotPoints || [];
+        const isFirstPage = options.isFirstPage;
+
+        if (!isFirstPage) {
+            doc.addPage();
+        }
+
+        const s = getSettings();
+        
+        let pdfW = 120;
+        let pdfH = 120;
+        if (s.maxX >= s.maxY) {
+            pdfH = 120 * (s.maxY / s.maxX);
+        } else {
+            pdfW = 120 * (s.maxX / s.maxY);
+        }
+
+        const mapLeft = 45;
+        const mapTop = 88;
+
+        const toPdfX = x => mapLeft + (x / s.maxX) * pdfW;
+        const toPdfY = y => mapTop + pdfH - (y / s.maxY) * pdfH;
+
+        // 標題下移
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(13);
+        doc.setTextColor(0, 0, 0);
+        doc.text(`Plot: ${siteName}`, mapLeft, mapTop - 8);
+
+        doc.setDrawColor(210, 210, 210);
+        doc.setLineWidth(0.15);
+
+        for (let i = 1; i < 10; i++) {
+            let xVal = (s.maxX / 10) * i;
+            let px = toPdfX(xVal);
+            doc.line(px, mapTop, px, mapTop + pdfH);
+
+            let yVal = (s.maxY / 10) * i;
+            let py = toPdfY(yVal);
+            doc.line(mapLeft, py, mapLeft + pdfW, py);
+        }
+
+        doc.setDrawColor(0, 0, 0);
+        doc.setLineWidth(0.35);
+        doc.line(toPdfX(s.maxX / 2), mapTop, toPdfX(s.maxX / 2), mapTop + pdfH);
+        doc.line(mapLeft, toPdfY(s.maxY / 2), mapLeft + pdfW, toPdfY(s.maxY / 2));
+
+        doc.setDrawColor(0, 0, 0);
+        doc.setLineWidth(0.5);
+        doc.rect(mapLeft, mapTop, pdfW, pdfH);
+
+        const usedBoxes = [];
+        plotPoints.slice().sort((a, b) => b.dbhNum - a.dbhNum).forEach(p => {
+            const x = toPdfX(p.relX);
+            const y = toPdfY(p.relY);
+            const r = circleRadiusFromDbh(p.dbhNum);
+
+            if (p.dbhNum > 0) doc.setDrawColor(0, 0, 0);
+            else doc.setDrawColor(160, 160, 160);
+
+            doc.setLineWidth(0.25);
+            doc.circle(x, y, r, 'S');
+        });
+
+        plotPoints.slice().sort((a, b) => b.dbhNum - a.dbhNum).forEach(p => {
+            if (!p.tagText) return;
+            const x = toPdfX(p.relX);
+            const y = toPdfY(p.relY);
+            const r = circleRadiusFromDbh(p.dbhNum);
+
+            if (p.dbhNum > 0) doc.setTextColor(0, 0, 0);
+            else doc.setTextColor(160, 160, 160);
+
+            placeLabel(doc, String(p.tagText), x, y, r, usedBoxes);
+        });
+
+        doc.setTextColor(0, 0, 0);
+
+        const scaleX = mapLeft;
+        const scaleY = mapTop + pdfH + 15;
+        const scaleLenMm = pdfW / 10;
+        const scaleLabel = (s.maxX / 10).toFixed(0) + ' cm';
+
+        doc.setDrawColor(0, 0, 0);
+        doc.setLineWidth(0.4);
+        doc.line(scaleX, scaleY, scaleX + scaleLenMm, scaleY);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8);
+        doc.text('scale', scaleX, scaleY - 2);
+        doc.text(scaleLabel, scaleX + scaleLenMm + 2, scaleY + 1);
+
+        doc.setFontSize(15);
+        doc.text('(        /        )', 150, mapTop + pdfH + 30);
+    }
+
+    function downloadA4PdfMap() {
+        if (data.length === 0) {
+            alert('沒有資料可輸出 PDF');
+            return;
+        }
+
+        if (!window.jspdf || !window.jspdf.jsPDF) {
+            alert('找不到 jsPDF。請確認已經載入 jspdf.umd.min.js');
+            return;
+        }
+
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+        const selPlot = plotSelector.value;
+        let plotsToExport = [];
+
+        if (selPlot === 'ALL') {
+            plotsToExport = [...new Set(data.map(d => String(d.plot || '').trim()))];
+            if (plotsToExport.length === 0 || (plotsToExport.length === 1 && plotsToExport[0] === '')) {
+                plotsToExport = ['']; 
+            }
+        } else {
+            plotsToExport = [selPlot];
+        }
+
+        plotsToExport.forEach((pName, index) => {
+            const plotData = data.filter(d => String(d.plot || '').trim() === pName);
+            const pdfPoints = plotData
+                .filter(row => numValue(row.x3) !== null && numValue(row.y3) !== null)
+                .map(row => ({
+                    relX: numValue(row.x3),
+                    relY: numValue(row.y3),
+                    dbhNum: numValue(row.dbh) || 0,
+                    tagText: row.tag || ''
+                }));
+
+            drawPdfPage(doc, {
+                siteName: pName || '未命名樣區',
+                plotPoints: pdfPoints,
+                isFirstPage: index === 0
+            });
+        });
+
+        const fileName = selPlot === 'ALL' && plotsToExport.length > 1
+            ? 'Pundo_Batch_Maps.pdf'
+            : `Pundo_Plot_${plotsToExport[0] || 'Map'}.pdf`;
+
+        doc.save(fileName.replace(/[\\/:*?"<>|]/g, '_'));
+    }
+
+    document.getElementById('btnDownloadPDF').addEventListener('click', downloadA4PdfMap);
 
     // 初始化繪圖
     draw();
