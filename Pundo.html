@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>Pundo</title>
+    <style>
+        body { font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; background-color: #f5f5f5; color: #333; margin: 0; padding: 20px; }
+        .container { display: flex; gap: 20px; max-width: 1400px; margin: 0 auto; }
+        .panel { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .col-left { flex: 3; }
+        .col-mid { flex: 5; }
+        .col-right { flex: 4; }
+        h4 { margin-top: 0; border-bottom: 2px solid #008B8B; padding-bottom: 5px; color: #008B8B; }
+        .form-group { margin-bottom: 12px; }
+        label { display: block; font-size: 13px; font-weight: bold; margin-bottom: 4px; }
+        input[type="text"], input[type="number"], select { width: 100%; padding: 6px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+        .row { display: flex; gap: 10px; margin-bottom: 10px; }
+        .col { flex: 1; }
+        button { padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%; transition: 0.2s; }
+        .btn-primary { background-color: #337ab7; color: white; }
+        .btn-primary:hover { background-color: #286090; }
+        .btn-success { background-color: #5cb85c; color: white; font-size: 16px; padding: 15px; }
+        .btn-success:hover { background-color: #449d44; }
+        #canvas-container { background-color: transparent; margin-top: 15px; display: flex; justify-content: center; overflow: hidden; }
+        canvas { max-width: 100%; height: auto; background-color: white; box-shadow: 0 2px 8px rgba(0,0,0,0.15); cursor: crosshair; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 10px; }
+        th, td { border: 1px solid #ddd; padding: 6px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        tr:hover { background-color: #f5f5f5; }
+        .notice { font-size: 12px; color: #d9534f; margin-bottom: 10px; }
+        .linked-data-box { background-color: #ececec; padding: 12px; border-radius: 6px; border: 1px solid #dcdcdc; margin-bottom: 12px; }
+        .linked-data-box label { color: #555; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="col-left">
+        <div class="panel">
+            <h4>1. 資料上傳</h4>
+            <div class="form-group">
+                <label>CSV 編碼格式</label>
+                <select id="encoding">
+                    <option value="UTF-8">UTF-8</option>
+                    <option value="Big5">Big5 / ASCII</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>上傳 CSV 檔案</label>
+                <input type="file" id="csvFileInput" accept=".csv">
+            </div>
+        </div>
+
+        <div class="panel" style="margin-top: 20px;">
+            <h4>2. 畫布與底圖校正</h4>
+            <div class="row form-group">
+                <div class="col"><label>X軸範圍 (cm)</label><input type="number" id="maxX" value="500"></div>
+                <div class="col"><label>Y軸範圍 (cm)</label><input type="number" id="maxY" value="500"></div>
+            </div>
+            <div class="form-group">
+                <label>上傳底圖 (JPG, PNG)</label>
+                <input type="file" id="imgFileInput" accept="image/*">
+            </div>
+            <div class="form-group">
+                <label>底圖旋轉角度 (度)</label>
+                <input type="number" id="imgAngle" value="0" step="90">
+            </div>
+            <label>微調底圖邊界：</label>
+            <div class="row form-group">
+                <div class="col"><label>左界 (X min)</label><input type="number" id="imgXMin" value="0"></div>
+                <div class="col"><label>右界 (X max)</label><input type="number" id="imgXMax" value="500"></div>
+            </div>
+            <div class="row form-group">
+                <div class="col"><label>下界 (Y min)</label><input type="number" id="imgYMin" value="0"></div>
+                <div class="col"><label>上界 (Y max)</label><input type="number" id="imgYMax" value="500"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-mid">
+        <div class="panel">
+            <h4>3. 新增 / 更新點位</h4>
+            <div class="notice" id="statusMsg">請輸入植物資訊後，點擊「準備點擊圖面」</div>
+            
+            <div class="form-group">
+                <label style="font-size: 15px; color: #008B8B;">Tag (標籤) - 主要目標</label>
+                <input type="text" id="inTag" style="border: 2px solid #008B8B; font-weight: bold; font-size: 16px; padding: 8px;">
+            </div>
+
+            <div class="linked-data-box">
+                <span style="display: block; font-size: 12px; color: #888; margin-bottom: 8px; font-weight: bold;">依 Tag 連動的資料：</span>
+                <div class="row">
+                    <div class="col"><label>Plot (樣區)</label><input type="text" id="inPlot"></div>
+                    <div class="col"><label>Species (物種)</label><input type="text" id="inSp"></div>
+                    <div class="col"><label>DBH(數值)</label><input type="number" id="inDbh" value="10"></div>
+                </div>
+                <div class="row">
+                    <div class="col"><label>x1</label><input type="text" id="inX1"></div>
+                    <div class="col"><label>y1</label><input type="text" id="inY1"></div>
+                    <div class="col"><label>x2</label><input type="text" id="inX2"></div>
+                    <div class="col"><label>y2</label><input type="text" id="inY2"></div>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col"><button class="btn-primary" id="btnPrepareClick">準備點擊圖面</button></div>
+            </div>
+        </div>
+        <div id="canvas-container">
+            <canvas id="myCanvas"></canvas>
+        </div>
+    </div>
+
+    <div class="col-right">
+        <div class="panel" style="height: 600px; overflow-y: auto;">
+            <h4>4. 資料呈現</h4>
+            <table id="dataTable">
+                <thead>
+                    <tr>
+                        <th>Plot</th><th>x1</th><th>y1</th><th>x2</th><th>y2</th><th>Tag</th><th>Sp</th><th>DBH</th><th>X3</th><th>Y3</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+        <button class="btn-success" id="btnDownload" style="margin-top: 20px;">下載完成的 CSV 檔案</button>
+    </div>
+</div>
+
+<script>
+    // --- 狀態變數 ---
+    let data = []; 
+    let bgImg = null;
+    let waitingForClick = false;
+
+    const canvas = document.getElementById('myCanvas');
+    const ctx = canvas.getContext('2d');
+    const statusMsg = document.getElementById('statusMsg');
+    const tbody = document.querySelector('#dataTable tbody');
+
+    const getSettings = () => ({
+        maxX: parseFloat(document.getElementById('maxX').value) || 500,
+        maxY: parseFloat(document.getElementById('maxY').value) || 500,
+        imgXMin: parseFloat(document.getElementById('imgXMin').value) || 0,
+        imgXMax: parseFloat(document.getElementById('imgXMax').value) || 500,
+        imgYMin: parseFloat(document.getElementById('imgYMin').value) || 0,
+        imgYMax: parseFloat(document.getElementById('imgYMax').value) || 500,
+        imgAngle: parseFloat(document.getElementById('imgAngle').value) || 0
+    });
+
+    // --- 繪圖邏輯 ---
+    function draw() {
+        const s = getSettings();
+        
+        const maxCanvasSize = 800;
+        const pad = { top: 30, right: 30, bottom: 50, left: 60 };
+        let scale;
+        
+        if (s.maxX >= s.maxY) {
+            canvas.width = maxCanvasSize;
+            scale = (canvas.width - pad.left - pad.right) / s.maxX;
+            canvas.height = (s.maxY * scale) + pad.top + pad.bottom;
+        } else {
+            canvas.height = maxCanvasSize;
+            scale = (canvas.height - pad.top - pad.bottom) / s.maxY;
+            canvas.width = (s.maxX * scale) + pad.left + pad.right;
+        }
+
+        const w = canvas.width;
+        const h = canvas.height;
+        ctx.clearRect(0, 0, w, h);
+
+        const originX = pad.left;
+        const originY = h - pad.bottom;
+
+        const toPix = (dataX, dataY) => ({
+            x: originX + (dataX * scale),
+            y: originY - (dataY * scale)
+        });
+
+        if (bgImg) {
+            ctx.save();
+            let ptTopLeft = toPix(s.imgXMin, s.imgYMax);
+            let ptBottomRight = toPix(s.imgXMax, s.imgYMin);
+            
+            let imgW = ptBottomRight.x - ptTopLeft.x;
+            let imgH = ptBottomRight.y - ptTopLeft.y; 
+
+            let cx = ptTopLeft.x + imgW / 2;
+            let cy = ptTopLeft.y + imgH / 2;
+            
+            ctx.translate(cx, cy);
+            ctx.rotate(s.imgAngle * Math.PI / 180);
+            ctx.drawImage(bgImg, -imgW / 2, -imgH / 2, imgW, imgH);
+            ctx.restore();
+        }
+
+        ctx.font = '12px Arial';
+        ctx.fillStyle = '#333';
+
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        for(let i = 0; i <= 10; i++) {
+            let val = (s.maxX / 10) * i;
+            let pt = toPix(val, 0);
+            
+            ctx.beginPath();
+            if(i === 0 || i === 5 || i === 10) {
+                ctx.strokeStyle = '#333';
+                ctx.lineWidth = 1.5;
+                ctx.setLineDash([]);
+            } else {
+                ctx.strokeStyle = '#ccc';
+                ctx.lineWidth = 1;
+                ctx.setLineDash([4, 4]);
+            }
+            ctx.moveTo(pt.x, originY);
+            ctx.lineTo(pt.x, pad.top);
+            ctx.stroke();
+            
+            ctx.fillText(val.toFixed(0), pt.x, originY + 8);
+        }
+        ctx.font = 'bold 13px Arial';
+        ctx.fillText("X 座標 (cm)", originX + (s.maxX * scale) / 2, originY + 28);
+
+        ctx.font = '12px Arial';
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+        for(let i = 0; i <= 10; i++) {
+            let val = (s.maxY / 10) * i;
+            let pt = toPix(0, val);
+            
+            ctx.beginPath();
+            if(i === 0 || i === 5 || i === 10) {
+                ctx.strokeStyle = '#333';
+                ctx.lineWidth = 1.5;
+                ctx.setLineDash([]);
+            } else {
+                ctx.strokeStyle = '#ccc';
+                ctx.lineWidth = 1;
+                ctx.setLineDash([4, 4]);
+            }
+            ctx.moveTo(originX, pt.y);
+            ctx.lineTo(originX + s.maxX * scale, pt.y);
+            ctx.stroke();
+            
+            ctx.fillText(val.toFixed(0), originX - 8, pt.y);
+        }
+        ctx.font = 'bold 13px Arial';
+        ctx.save();
+        ctx.translate(originX - 35, originY - (s.maxY * scale) / 2);
+        ctx.rotate(-Math.PI / 2);
+        ctx.textAlign = 'center';
+        ctx.fillText("Y 座標 (cm)", 0, 0);
+        ctx.restore();
+
+        ctx.strokeStyle = 'black';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([]);
+        ctx.strokeRect(originX, pad.top, s.maxX * scale, s.maxY * scale);
+
+        data.forEach(p => {
+            if(p.x3 === undefined || p.y3 === undefined || isNaN(p.x3) || isNaN(p.y3)) return;
+            let pt = toPix(p.x3, p.y3);
+            let radius = Math.max(3, Math.min(15, parseFloat(p.dbh) || 5)); 
+
+            ctx.beginPath();
+            ctx.arc(pt.x, pt.y, radius, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(0, 139, 139, 0.6)';
+            ctx.fill();
+            ctx.strokeStyle = '#008B8B';
+            ctx.stroke();
+
+            ctx.fillStyle = '#008B8B';
+            ctx.font = 'bold 13px Arial';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(p.tag, pt.x + radius + 3, pt.y);
+        });
+    }
+
+    // --- 資料表渲染 ---
+    function renderTable() {
+        tbody.innerHTML = '';
+        data.forEach((row) => {
+            let tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${row.plot||''}</td>
+                <td>${row.x1||''}</td>
+                <td>${row.y1||''}</td>
+                <td>${row.x2||''}</td>
+                <td>${row.y2||''}</td>
+                <td>${row.tag||''}</td>
+                <td>${row.sp||''}</td>
+                <td>${row.dbh||''}</td>
+                <td>${row.x3||''}</td>
+                <td>${row.y3||''}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    // --- 事件監聽區 ---
+    document.getElementById('inTag').addEventListener('input', function(e) {
+        let val = e.target.value.trim();
+        let match = data.find(d => d.tag === val);
+        if(match) {
+            document.getElementById('inSp').value = match.sp || '';
+            document.getElementById('inDbh').value = match.dbh || '';
+            document.getElementById('inPlot').value = match.plot || '';
+            document.getElementById('inX1').value = match.x1 || '';
+            document.getElementById('inY1').value = match.y1 || '';
+            document.getElementById('inX2').value = match.x2 || '';
+            document.getElementById('inY2').value = match.y2 || '';
+        }
+    });
+
+    document.getElementById('btnPrepareClick').addEventListener('click', () => {
+        if (!document.getElementById('inTag').value) {
+            alert('請先輸入 Tag');
+            return;
+        }
+        waitingForClick = true;
+        statusMsg.innerText = '⚠️ 等待點擊畫布中...';
+        statusMsg.style.color = '#d9534f';
+    });
+
+    canvas.addEventListener('click', function(e) {
+        if (!waitingForClick) return;
+        const rect = canvas.getBoundingClientRect();
+        const px = (e.clientX - rect.left) * (canvas.width / rect.width);
+        const py = (e.clientY - rect.top) * (canvas.height / rect.height);
+
+        const s = getSettings();
+        const pad = { top: 30, right: 30, bottom: 50, left: 60 };
+        const maxCanvasSize = 800;
+        
+        let scale = (s.maxX >= s.maxY) 
+            ? (maxCanvasSize - pad.left - pad.right) / s.maxX 
+            : (maxCanvasSize - pad.top - pad.bottom) / s.maxY;
+            
+        const originX = pad.left;
+        const originY = canvas.height - pad.bottom;
+
+        let dataX = (px - originX) / scale;
+        let dataY = (originY - py) / scale;
+
+        if(dataX < 0) dataX = 0; if(dataX > s.maxX) dataX = s.maxX;
+        if(dataY < 0) dataY = 0; if(dataY > s.maxY) dataY = s.maxY;
+
+        const tag = document.getElementById('inTag').value;
+        const sp = document.getElementById('inSp').value;
+        const dbh = document.getElementById('inDbh').value;
+        const plot = document.getElementById('inPlot').value;
+        const x1 = document.getElementById('inX1').value;
+        const y1 = document.getElementById('inY1').value;
+        const x2 = document.getElementById('inX2').value;
+        const y2 = document.getElementById('inY2').value;
+
+        let matchIndex = data.findIndex(d => d.tag === tag);
+        if (matchIndex >= 0) {
+            data[matchIndex].sp = sp;
+            data[matchIndex].dbh = dbh;
+            data[matchIndex].plot = plot;
+            data[matchIndex].x1 = x1;
+            data[matchIndex].y1 = y1;
+            data[matchIndex].x2 = x2;
+            data[matchIndex].y2 = y2;
+            data[matchIndex].x3 = dataX.toFixed(2);
+            data[matchIndex].y3 = dataY.toFixed(2);
+        } else {
+            data.push({ 
+                plot: plot, x1: x1, y1: y1, x2: x2, y2: y2, 
+                tag: tag, sp: sp, dbh: dbh, 
+                x3: dataX.toFixed(2), y3: dataY.toFixed(2) 
+            });
+        }
+
+        waitingForClick = false;
+        statusMsg.innerText = '✔️ 點位記錄成功';
+        statusMsg.style.color = '#5cb85c';
+        draw();
+        renderTable();
+    });
+
+    document.getElementById('imgFileInput').addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if(!file) return;
+        const reader = new FileReader();
+        reader.onload = function(event) {
+            bgImg = new Image();
+            bgImg.onload = draw;
+            bgImg.src = event.target.result;
+        };
+        reader.readAsDataURL(file);
+    });
+
+    document.getElementById('csvFileInput').addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if(!file) return;
+        const encoding = document.getElementById('encoding').value;
+        const reader = new FileReader();
+        
+        reader.onload = function(event) {
+            const text = event.target.result;
+            const lines = text.split('\n').filter(line => line.trim() !== '');
+            if(lines.length < 2) return;
+            
+            const headers = lines[0].split(',').map(h => h.trim().replace(/\"/g,'').toLowerCase());
+            const newData = [];
+            
+            for(let i=1; i<lines.length; i++) {
+                let cols = lines[i].split(',');
+                let rowData = {};
+                headers.forEach((h, idx) => {
+                    rowData[h] = cols[idx] ? cols[idx].trim().replace(/\"/g,'') : '';
+                });
+                if(rowData.tag !== undefined) newData.push(rowData);
+            }
+            data = newData;
+            draw();
+            renderTable();
+            alert('CSV 匯入成功！');
+        };
+        reader.readAsText(file, encoding);
+    });
+
+    document.querySelectorAll('#maxX, #maxY, #imgXMin, #imgXMax, #imgYMin, #imgYMax, #imgAngle').forEach(input => {
+        input.addEventListener('input', draw);
+    });
+
+    document.getElementById('btnDownload').addEventListener('click', () => {
+        if(data.length === 0) { alert('沒有資料可下載'); return; }
+        
+        let headers = Object.keys(data[0]); 
+        let csvContent = headers.join(',') + '\n';
+        
+        data.forEach(row => {
+            let rowStr = headers.map(h => row[h] !== undefined ? `"${row[h]}"` : '""').join(',');
+            csvContent += rowStr + '\n';
+        });
+
+        const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
+        const blob = new Blob([bom, csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.setAttribute('href', url);
+        
+        let d = new Date();
+        let dateStr = d.toISOString().split('T')[0];
+        a.setAttribute('download', `plot_data_${dateStr}.csv`);
+        
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    });
+
+    // 初始化繪圖
+    draw();
+</script>
+
+</body>
+</html>
