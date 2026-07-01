@@ -133,7 +133,14 @@
             </div>
             <div class="form-group">
                 <label>上傳底圖 (JPG, PNG, PDF)</label>
-                <input type="file" id="imgFileInput" accept="image/*,.pdf,application/pdf">
+                <div class="row" style="margin-bottom: 0; align-items: center;">
+                    <div class="col">
+                        <input type="file" id="imgFileInput" accept="image/*,.pdf,application/pdf">
+                    </div>
+                    <div style="flex: 0 0 95px;">
+                        <button type="button" class="btn-danger" id="btnRemoveBasemap" style="font-size: 12px; padding: 7px 8px;">移除底圖</button>
+                    </div>
+                </div>
             </div>
 
             <div class="row form-group" style="background: #eef8f8; padding: 8px; border-radius: 4px; align-items: center;">
@@ -777,6 +784,20 @@
         } catch (err) {
             statusMsg.innerText = '⚠️ 底圖載入失敗：' + err.message; statusMsg.style.color = '#d9534f';
         }
+    });
+
+    document.getElementById('btnRemoveBasemap').addEventListener('click', function() {
+        bgImg = null;
+        originalBgImg = null;
+
+        const input = document.getElementById('imgFileInput');
+        if (input) input.value = '';
+
+        hideMagnifier();
+        draw();
+
+        statusMsg.innerText = '✔️ 已移除底圖，可以重新選擇其他 JPG、PNG 或 PDF';
+        statusMsg.style.color = '#5cb85c';
     });
 
     function parseCsvLine(line) {
