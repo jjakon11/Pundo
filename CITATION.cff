@@ -1,0 +1,27 @@
+cff-version: 1.2.0
+title: "Pundo: Plant Spatial Points Tool"
+message: "If you use this software, please cite it as below."
+type: software
+
+authors:
+  - family-names: Ku
+    given-names: Chen-Chia
+
+
+version: 1.0.0
+date-released: 2026-07-02
+
+repository-code: "https://github.com/jjakon11/Pundo"
+url: "https://jjakon11.github.io/Pundo/"
+
+abstract: "Pundo is a lightweight web-based tool for annotating plant spatial points and recording tree survey data on plot maps. It supports local, offline use and CSV export for forest plot surveys and plant spatial data digitization."
+
+keywords:
+  - forest dynamics plot
+  - plant spatial data
+  - tree census
+  - forest ecology
+  - spatial point annotation
+  - web tool
+
+license: MIT
