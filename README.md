@@ -2,7 +2,7 @@
 
 ## 植物空間點位標記工具 Plant Spatial Points Tool
 
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.xxxxxxx.svg)](https://doi.org/10.5281/zenodo.xxxxxxx)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21123757.svg)](https://doi.org/10.5281/zenodo.21123757)
 
 [**Pundo**](https://jjakon11.github.io/Pundo/) 是一款專為森林生態學、森林動態樣區調查與植物空間資料建檔所設計的輕量級網頁工具。研究人員可以在樣區底圖上快速標記樹木或木本植物的空間位置，並記錄物種、胸高直徑（DBH）等重要調查資訊。
 
@@ -203,6 +203,12 @@ Pundo 適合用於下列工作：
 * Gemini
 
 ---
+
+## Citation
+
+If you use Pundo in your research, teaching, or field data processing workflow, please cite:
+
+Ku, C.-C. (2026). *Pundo: Plant Spatial Points Tool* (Version 1.0.0) [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.21123757
 
 
 
